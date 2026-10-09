@@ -74,13 +74,19 @@ $("file").addEventListener("change", e => {
   const reader = new FileReader();
   reader.onerror = () => showError("Could not read that file.");
   reader.onload = async () => {
+    const bytes = new Uint8Array(reader.result);   // keep our own copy for error hints
     try {
-      pdf = await pdfjsLib.getDocument({ data: new Uint8Array(reader.result) }).promise;
+      pdf = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
       pageNum = 1;
       $("empty").style.display = "none";
       await render();
     } catch (err) {
-      showError("Could not open PDF: " + (err && err.message ? err.message : err));
+      const head = String.fromCharCode(...bytes.slice(0, 8));
+      const kb = Math.round(bytes.byteLength / 1024);
+      let hint = "";
+      if (!head.startsWith("%PDF")) hint = " The file does not start like a PDF (it may be a DRM-protected book, a different format, or an iCloud file that has not finished downloading).";
+      else if (err && /Invalid PDF structure/i.test(err.message)) hint = " The file looks incomplete or damaged (a partial download is the usual cause). Re-download it and try again.";
+      showError("Could not open PDF (" + kb + " KB)." + hint + " Details: " + (err && err.message ? err.message : err));
     }
   };
   reader.readAsArrayBuffer(f);
