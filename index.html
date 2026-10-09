@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Blink Reader">
+<title>Blink Reader</title>
+<style>
+  html, body { margin:0; height:100%; background:#000; color:#eee; font-family:-apple-system, system-ui, sans-serif; overflow:hidden; }
+  #controls { position:fixed; top:0; left:0; right:0; z-index:5; background:#1c1c1e; padding:10px; display:flex; flex-wrap:wrap; gap:10px; align-items:center; font-size:16px; }
+  #controls.hidden { display:none; }
+  #controls label { display:flex; align-items:center; gap:4px; }
+  #controls label.dur { flex-direction:column; align-items:flex-start; min-width:180px; }
+  #controls label.dur input { width:180px; }
+  #controls b { color:#0a84ff; }
+  #controls button { font-size:16px; padding:8px 14px; border-radius:8px; border:0; background:#0a84ff; color:#fff; }
+  #controls button.secondary { background:#3a3a3c; }
+  #info { opacity:.8; }
+  .fileBtn { position:relative; overflow:hidden; font-size:16px; padding:8px 14px; border-radius:8px; background:#0a84ff; color:#fff; cursor:pointer; }
+  .fileBtn input { position:absolute; left:0; top:0; width:100%; height:100%; opacity:0; cursor:pointer; font-size:16px; }
+  #stage { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
+  #page { max-width:100%; max-height:100%; }
+  #blackout { position:fixed; inset:0; background:#000; z-index:3; display:none; }
+  #blackout.on { display:block; }
+  #empty { padding:40px; text-align:center; }
+</style>
+</head>
+<body>
+
+<div id="controls">
+  <label class="fileBtn">Open PDF<input type="file" id="file" accept=".pdf,application/pdf"></label>
+  <label class="dur">Show <b id="viewVal">5.0</b> s
+    <input type="range" id="view" value="5" min="0.5" max="30" step="0.5"></label>
+  <label class="dur">Black <b id="blackVal">2.0</b> s
+    <input type="range" id="black" value="2" min="0.5" max="30" step="0.5"></label>
+  <label><input type="checkbox" id="advance" checked> Next page each cycle</label>
+  <button id="startBtn" onclick="toggle()">Start</button>
+  <button class="secondary" onclick="go(-1)">&lt;</button>
+  <button class="secondary" onclick="go(1)">&gt;</button>
+  <span id="info">No PDF open</span>
+</div>
+
+<div id="stage">
+  <canvas id="page"></canvas>
+  <div id="empty">Tap "Open PDF" and choose a file from Files / iCloud Drive.</div>
+</div>
+<div id="blackout"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+let pdf = null, pageNum = 1, running = false, showing = true, timer = null, wakeLock = null;
+
+// ---------- open file ----------
+function showError(msg) {
+  $("empty").style.display = "block";
+  $("empty").textContent = msg;
+  $("info").textContent = "Error";
+}
+
+if (typeof pdfjsLib === "undefined") {
+  showError("PDF library did not load. Check the internet connection and reload.");
+}
+
+$("file").addEventListener("change", e => {
+  const f = e.target.files[0];
+  e.target.value = "";                 // allow re-picking the same file
+  if (!f) return;
+  $("info").textContent = "Loading...";
+  const reader = new FileReader();
+  reader.onerror = () => showError("Could not read that file.");
+  reader.onload = async () => {
+    try {
+      pdf = await pdfjsLib.getDocument({ data: new Uint8Array(reader.result) }).promise;
+      pageNum = 1;
+      $("empty").style.display = "none";
+      await render();
+    } catch (err) {
+      showError("Could not open PDF: " + (err && err.message ? err.message : err));
+    }
+  };
+  reader.readAsArrayBuffer(f);
+});
+
+// ---------- rendering ----------
+async function render() {
+  if (!pdf) return;
+  const page = await pdf.getPage(pageNum);
+  const canvas = $("page");
+  const base = page.getViewport({ scale: 1 });
+  const scale = Math.min(window.innerWidth / base.width, window.innerHeight / base.height)
+                * (window.devicePixelRatio || 1);
+  const vp = page.getViewport({ scale });
+  canvas.width = vp.width;
+  canvas.height = vp.height;
+  canvas.style.width = (vp.width / (window.devicePixelRatio || 1)) + "px";
+  canvas.style.height = (vp.height / (window.devicePixelRatio || 1)) + "px";
+  await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
+  $("info").textContent = `Page ${pageNum} / ${pdf.numPages}`;
+}
+
+function go(step) {
+  if (!pdf) return;
+  pageNum = Math.max(1, Math.min(pdf.numPages, pageNum + step));
+  render();
+}
+
+// ---------- cycle ----------
+function secs(id, def) {
+  const v = parseFloat($(id).value);
+  return isNaN(v) ? def : Math.max(0.1, v);
+}
+
+function setBlack(on) {
+  showing = !on;
+  $("blackout").classList.toggle("on", on);
+}
+
+function toggle() { running ? stop() : start(); }
+
+async function start() {
+  if (!pdf) { showError("Open a PDF first (tap Open PDF)."); return; }
+  running = true;
+  $("startBtn").textContent = "Stop";
+  $("controls").classList.add("hidden");   // hide controls while running
+  setBlack(false);
+  await keepAwake(true);
+  schedule(secs("view", 5));
+}
+
+function stop() {
+  running = false;
+  clearTimeout(timer);
+  $("startBtn").textContent = "Start";
+  $("controls").classList.remove("hidden");
+  setBlack(false);
+  keepAwake(false);
+}
+
+function schedule(seconds) {
+  timer = setTimeout(tick, seconds * 1000);
+}
+
+function tick() {
+  if (!running) return;
+  if (showing) {
+    setBlack(true);                       // view phase over -> black
+    schedule(secs("black", 2));
+  } else {
+    setBlack(false);                      // black phase over -> show
+    if ($("advance").checked && pageNum < pdf.numPages) {
+      pageNum++;
+      render();
+    }
+    schedule(secs("view", 5));
+  }
+}
+
+// keep iPad screen from sleeping during a session (iOS 16.4+)
+async function keepAwake(on) {
+  try {
+    if (on && "wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen");
+    if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; }
+  } catch (_) {}
+}
+
+// tap the page to show/hide controls
+["stage", "blackout"].forEach(id => $(id).addEventListener("click", () => {
+  if (running) $("controls").classList.toggle("hidden");
+}));
+
+// live labels for the sliders
+["view", "black"].forEach(id => $(id).addEventListener("input", () => {
+  $(id + "Val").textContent = parseFloat($(id).value).toFixed(1);
+}));
+
+window.addEventListener("resize", () => { if (pdf) render(); });
+</script>
+</body>
+</html>
