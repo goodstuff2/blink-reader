@@ -13,6 +13,7 @@
   #controls.collapsed #optBody { display:none; }
   #controls.collapsed { padding:6px 10px; }
   #optToggle { margin-right:auto; }
+  .gotoBox input { width:84px; font-size:16px; padding:6px; border-radius:6px; border:1px solid #444; background:#000; color:#eee; }
   #controls label { display:flex; align-items:center; gap:4px; }
   #controls label.dur { flex-direction:column; align-items:flex-start; min-width:180px; }
   #controls label.dur input { width:180px; }
@@ -62,6 +63,9 @@
   <button class="secondary" onclick="go(-1)">&lt;</button>
   <button class="secondary" onclick="go(1)">&gt;</button>
   <span id="info">No PDF open</span>
+  <label class="gotoBox">Go to page
+    <input type="number" id="gotoInput" min="1" inputmode="numeric" placeholder="#"></label>
+  <button class="secondary" onclick="gotoPage()">Go</button>
   </div>
 </div>
 
@@ -182,6 +186,16 @@ async function render() {
   await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
   $("info").textContent = `Page ${pageNum} / ${pdf.numPages}`;
 }
+
+function gotoPage() {
+  if (!pdf) { showError("Open a PDF first (tap Open PDF)."); return; }
+  const n = parseInt($("gotoInput").value, 10);
+  if (isNaN(n)) return;
+  pageNum = Math.max(1, Math.min(pdf.numPages, n));   // clamp to 1..last page
+  $("gotoInput").value = "";
+  render();
+}
+$("gotoInput").addEventListener("keydown", e => { if (e.key === "Enter") gotoPage(); });
 
 function go(step) {
   if (!pdf) return;
