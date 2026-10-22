@@ -22,8 +22,9 @@
   #info { opacity:.8; }
   .fileBtn { position:relative; overflow:hidden; font-size:16px; padding:8px 14px; border-radius:8px; background:#0a84ff; color:#fff; cursor:pointer; }
   .fileBtn input { position:absolute; left:0; top:0; width:100%; height:100%; opacity:0; cursor:pointer; font-size:16px; }
-  #stage { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
-  #page { max-width:100%; max-height:100%; }
+  #stage { position:fixed; inset:0; display:flex; overflow:auto; -webkit-overflow-scrolling:touch; }
+  #stage.clip { overflow:hidden; }
+  #page { display:block; margin:auto; flex:none; }
   #blackout { position:fixed; inset:0; background:#000; z-index:3; display:none; }
   #blackout.on { display:block; }
   #empty { padding:40px; text-align:center; }
@@ -39,6 +40,12 @@
     <input type="range" id="view" value="5" min="0.5" max="30" step="0.5"></label>
   <label class="dur">Black <b id="blackVal">2.0</b> s
     <input type="range" id="black" value="2" min="0.5" max="30" step="0.5"></label>
+  <label>Fit <select id="fitMode">
+    <option value="page">Whole page</option>
+    <option value="width">Fit width</option>
+    <option value="height">Fit height</option>
+    <option value="fill">Fill screen (crop)</option>
+  </select></label>
   <label><input type="checkbox" id="advance"> Next page each cycle</label>
   <label><input type="checkbox" id="swayOn" checked> Figure-8 sway</label>
   <label class="dur">Sway size <b id="swaySizeVal">20</b> px
@@ -134,13 +141,17 @@ async function render() {
   const page = await pdf.getPage(pageNum);
   const canvas = $("page");
   const base = page.getViewport({ scale: 1 });
-  const scale = Math.min(window.innerWidth / base.width, window.innerHeight / base.height)
-                * (window.devicePixelRatio || 1);
-  const vp = page.getViewport({ scale });
+  const mode = $("fitMode").value;
+  const sw = window.innerWidth, sh = window.innerHeight;
+  const sx = sw / base.width, sy = sh / base.height;   // CSS-pixel scale needed for each axis
+  const cssScale = { page: Math.min(sx, sy), width: sx, height: sy, fill: Math.max(sx, sy) }[mode];
+  $("stage").classList.toggle("clip", mode === "fill");
+  const dpr = window.devicePixelRatio || 1;
+  const vp = page.getViewport({ scale: cssScale * dpr });   // render at device resolution
   canvas.width = vp.width;
   canvas.height = vp.height;
-  canvas.style.width = (vp.width / (window.devicePixelRatio || 1)) + "px";
-  canvas.style.height = (vp.height / (window.devicePixelRatio || 1)) + "px";
+  canvas.style.width = (vp.width / dpr) + "px";
+  canvas.style.height = (vp.height / dpr) + "px";
   await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
   $("info").textContent = `Page ${pageNum} / ${pdf.numPages}`;
 }
@@ -231,6 +242,15 @@ function toggleOptions() {
 ["view", "black"].forEach(id => $(id).addEventListener("input", () => {
   $(id + "Val").textContent = parseFloat($(id).value).toFixed(1);
 }));
+
+$("fitMode").addEventListener("change", () => {
+  try { localStorage.setItem("blinkFit", $("fitMode").value); } catch (_) {}
+  render();
+});
+try {
+  const saved = localStorage.getItem("blinkFit");
+  if (saved && [...$("fitMode").options].some(o => o.value === saved)) $("fitMode").value = saved;
+} catch (_) {}
 
 window.addEventListener("resize", () => { if (pdf) render(); });
 </script>
