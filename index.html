@@ -25,6 +25,7 @@
   #stage { position:fixed; inset:0; display:flex; overflow:auto; -webkit-overflow-scrolling:touch; }
   #stage.clip { overflow:hidden; }
   #page { display:block; margin:auto; flex:none; }
+  #page.inverted { filter:invert(1); }
   #blackout { position:fixed; inset:0; background:#000; z-index:3; display:none; }
   #blackout.on { display:block; }
   #empty { padding:40px; text-align:center; }
@@ -48,6 +49,11 @@
   </select></label>
   <label><input type="checkbox" id="advance"> Next page each cycle</label>
   <label><input type="checkbox" id="swayOn" checked> Figure-8 sway</label>
+  <label><input type="checkbox" id="invOn"> Invert colors</label>
+  <label class="dur">Invert every <b id="invEveryVal">10</b> s
+    <input type="range" id="invEvery" value="10" min="1" max="60" step="1"></label>
+  <label class="dur">Invert for <b id="invForVal">1.0</b> s
+    <input type="range" id="invFor" value="1" min="0.5" max="30" step="0.5"></label>
   <label class="dur">Sway size <b id="swaySizeVal">20</b> px
     <input type="range" id="swaySize" value="20" min="0" max="80" step="1"></label>
   <label class="dur">Sway time <b id="swayTimeVal">8.0</b> s/loop
@@ -109,6 +115,27 @@ $("file").addEventListener("change", e => {
   };
   reader.readAsArrayBuffer(f);
 });
+
+// ---------- invert colours on a timer (independent of Start) ----------
+let invTimer = null;
+function setInverted(on) { $("page").classList.toggle("inverted", on); }
+function invertCycle() {
+  clearTimeout(invTimer); invTimer = null;
+  if (!$("invOn").checked) { setInverted(false); return; }
+  const every = parseFloat($("invEvery").value);            // period in seconds
+  const dur = Math.min(parseFloat($("invFor").value), every);
+  if (dur >= every) { setInverted(true); return; }          // always on
+  const step = on => {
+    setInverted(on);
+    invTimer = setTimeout(() => step(!on), (on ? dur : every - dur) * 1000);
+  };
+  step(true);
+}
+["invOn", "invEvery", "invFor"].forEach(id => $(id).addEventListener("input", invertCycle));
+["invEvery", "invFor"].forEach(id => $(id).addEventListener("input", () => {
+  $(id === "invEvery" ? "invEveryVal" : "invForVal").textContent =
+    parseFloat($(id).value).toFixed(id === "invEvery" ? 0 : 1);
+}));
 
 // ---------- figure-8 sway ----------
 let swayStart = performance.now();
