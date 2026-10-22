@@ -34,7 +34,12 @@
     <input type="range" id="view" value="5" min="0.5" max="30" step="0.5"></label>
   <label class="dur">Black <b id="blackVal">2.0</b> s
     <input type="range" id="black" value="2" min="0.5" max="30" step="0.5"></label>
-  <label><input type="checkbox" id="advance" checked> Next page each cycle</label>
+  <label><input type="checkbox" id="advance"> Next page each cycle</label>
+  <label><input type="checkbox" id="swayOn" checked> Figure-8 sway</label>
+  <label class="dur">Sway size <b id="swaySizeVal">20</b> px
+    <input type="range" id="swaySize" value="20" min="0" max="80" step="1"></label>
+  <label class="dur">Sway time <b id="swayTimeVal">8.0</b> s/loop
+    <input type="range" id="swayTime" value="8" min="2" max="20" step="0.5"></label>
   <button id="startBtn" onclick="toggle()">Start</button>
   <button class="secondary" onclick="go(-1)">&lt;</button>
   <button class="secondary" onclick="go(1)">&gt;</button>
@@ -91,6 +96,31 @@ $("file").addEventListener("change", e => {
   };
   reader.readAsArrayBuffer(f);
 });
+
+// ---------- figure-8 sway ----------
+let swayStart = performance.now();
+function swayLoop(now) {
+  const canvas = $("page");
+  if ($("swayOn").checked) {
+    const A = parseFloat($("swaySize").value);                 // horizontal size in px
+    const T = parseFloat($("swayTime").value) * 1000;          // ms per full figure-8
+    const t = ((now - swayStart) % T) / T * 2 * Math.PI;
+    const x = A * Math.sin(t);
+    const y = (A / 2) * Math.sin(2 * t);                       // 1:2 ratio draws the 8
+    canvas.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+  } else {
+    canvas.style.transform = "none";
+    swayStart = now;                                           // restart from centre next time
+  }
+  requestAnimationFrame(swayLoop);
+}
+requestAnimationFrame(swayLoop);
+
+["swaySize", "swayTime"].forEach(id => $(id).addEventListener("input", () => {
+  const v = parseFloat($(id).value);
+  $(id === "swaySize" ? "swaySizeVal" : "swayTimeVal").textContent =
+    id === "swaySize" ? v.toFixed(0) : v.toFixed(1);
+}));
 
 // ---------- rendering ----------
 async function render() {
