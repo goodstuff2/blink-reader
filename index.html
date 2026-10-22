@@ -9,7 +9,10 @@
 <style>
   html, body { margin:0; height:100%; background:#000; color:#eee; font-family:-apple-system, system-ui, sans-serif; overflow:hidden; }
   #controls { position:fixed; top:0; left:0; right:0; z-index:5; background:#1c1c1e; padding:10px; display:flex; flex-wrap:wrap; gap:10px; align-items:center; font-size:16px; }
-  #controls.hidden { display:none; }
+  #optBody { display:flex; flex-wrap:wrap; gap:10px; align-items:center; flex:1; }
+  #controls.collapsed #optBody { display:none; }
+  #controls.collapsed { padding:6px 10px; }
+  #optToggle { margin-right:auto; }
   #controls label { display:flex; align-items:center; gap:4px; }
   #controls label.dur { flex-direction:column; align-items:flex-start; min-width:180px; }
   #controls label.dur input { width:180px; }
@@ -29,6 +32,8 @@
 <body>
 
 <div id="controls">
+  <button id="optToggle" class="secondary" onclick="toggleOptions()">Hide options</button>
+  <div id="optBody">
   <label class="fileBtn">Open PDF<input type="file" id="file" accept=".pdf,application/pdf"></label>
   <label class="dur">Show <b id="viewVal">5.0</b> s
     <input type="range" id="view" value="5" min="0.5" max="30" step="0.5"></label>
@@ -44,6 +49,7 @@
   <button class="secondary" onclick="go(-1)">&lt;</button>
   <button class="secondary" onclick="go(1)">&gt;</button>
   <span id="info">No PDF open</span>
+  </div>
 </div>
 
 <div id="stage">
@@ -162,7 +168,7 @@ async function start() {
   if (!pdf) { showError("Open a PDF first (tap Open PDF)."); return; }
   running = true;
   $("startBtn").textContent = "Stop";
-  $("controls").classList.add("hidden");   // hide controls while running
+  setOptions(false);                       // collapse options while running
   setBlack(false);
   await keepAwake(true);
   schedule(secs("view", 5));
@@ -172,7 +178,7 @@ function stop() {
   running = false;
   clearTimeout(timer);
   $("startBtn").textContent = "Start";
-  $("controls").classList.remove("hidden");
+  setOptions(true);
   setBlack(false);
   keepAwake(false);
 }
@@ -204,13 +210,21 @@ async function keepAwake(on) {
   } catch (_) {}
 }
 
+function setOptions(open) {
+  $("controls").classList.toggle("collapsed", !open);
+  $("optToggle").textContent = open ? "Hide options" : "Options";
+}
+function toggleOptions() {
+  setOptions($("controls").classList.contains("collapsed"));
+}
+
 // tap the page to show/hide controls
 // tap left 30% = previous page, right 30% = next page, middle = show/hide controls
 ["stage", "blackout"].forEach(id => $(id).addEventListener("click", e => {
   const x = e.clientX / window.innerWidth;
   if (x < 0.3) go(-1);
   else if (x > 0.7) go(1);
-  else if (running) $("controls").classList.toggle("hidden");
+  else if (running) toggleOptions();
 }));
 
 // live labels for the sliders
